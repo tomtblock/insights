@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Main database
+  postgres:
+    image: postgres:16-alpine
+    container_name: arb-postgres
+    environment:
+      POSTGRES_USER: arb
+      POSTGRES_PASSWORD: arb_secret
+      POSTGRES_DB: arb_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arb -d arb_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: arb-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    container_name: arb-api
+    environment:
+      DATABASE_URL: postgresql://arb:arb_secret@postgres:5432/arb_platform
+      REDIS_URL: redis://redis:6379
+      API_PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Market Ingestion Service
+  ingest-markets:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.service
+      args:
+        SERVICE_NAME: ingest-markets
+    container_name: arb-ingest-markets
+    environment:
+      DATABASE_URL: postgresql://arb:arb_secret@postgres:5432/arb_platform
+      REDIS_URL: redis://redis:6379
+      FINFEED_API_KEY: a5d8925b-027f-42c0-a000-421699c8c86d
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Arbitrage Engine
+  arb-engine:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.service
+      args:
+        SERVICE_NAME: arb-engine
+    container_name: arb-engine
+    environment:
+      DATABASE_URL: postgresql://arb:arb_secret@postgres:5432/arb_platform
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # LLM Topic Scanner
+  topics-llm:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.service
+      args:
+        SERVICE_NAME: topics-llm
+    container_name: arb-topics-llm
+    environment:
+      DATABASE_URL: postgresql://arb:arb_secret@postgres:5432/arb_platform
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Web UI
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    container_name: arb-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+

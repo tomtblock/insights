@@ -1,0 +1,254 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-accent: #10b981;
+  --color-accent-muted: #059669;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-surface: #18181b;
+  --color-surface-elevated: #27272a;
+}
+
+@layer base {
+  * {
+    @apply border-zinc-800;
+  }
+  
+  body {
+    @apply bg-zinc-950 text-zinc-100;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-zinc-900;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-700 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-600;
+  }
+}
+
+@layer components {
+  /* Card styling */
+  .card {
+    @apply bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden;
+  }
+  
+  .card-header {
+    @apply px-4 py-3 border-b border-zinc-800 bg-zinc-900/50;
+  }
+  
+  .card-body {
+    @apply p-4;
+  }
+
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-primary {
+    @apply bg-emerald-600 hover:bg-emerald-500 text-white;
+  }
+  
+  .btn-secondary {
+    @apply bg-zinc-800 hover:bg-zinc-700 text-zinc-100;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100;
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-500 text-white;
+  }
+  
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  
+  .btn-icon {
+    @apply p-2;
+  }
+
+  /* Input styling */
+  .input {
+    @apply w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500;
+  }
+  
+  .input-sm {
+    @apply px-2 py-1.5 text-sm;
+  }
+
+  /* Badge styling */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-green {
+    @apply bg-emerald-500/20 text-emerald-400;
+  }
+  
+  .badge-yellow {
+    @apply bg-amber-500/20 text-amber-400;
+  }
+  
+  .badge-red {
+    @apply bg-red-500/20 text-red-400;
+  }
+  
+  .badge-blue {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+  
+  .badge-gray {
+    @apply bg-zinc-500/20 text-zinc-400;
+  }
+
+  /* Table styling */
+  .table-container {
+    @apply overflow-x-auto;
+  }
+  
+  .table {
+    @apply w-full text-sm;
+  }
+  
+  .table th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider bg-zinc-900/50;
+  }
+  
+  .table td {
+    @apply px-4 py-3 border-t border-zinc-800;
+  }
+  
+  .table tr:hover td {
+    @apply bg-zinc-800/30;
+  }
+
+  /* Tab navigation */
+  .tabs {
+    @apply flex gap-1 p-1 bg-zinc-900 rounded-lg;
+  }
+  
+  .tab {
+    @apply px-4 py-2 rounded-md text-sm font-medium transition-colors;
+  }
+  
+  .tab-active {
+    @apply bg-zinc-800 text-zinc-100;
+  }
+  
+  .tab-inactive {
+    @apply text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50;
+  }
+
+  /* Status indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  
+  .status-live {
+    @apply bg-emerald-500 animate-pulse;
+  }
+  
+  .status-stale {
+    @apply bg-amber-500;
+  }
+  
+  .status-dead {
+    @apply bg-red-500;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply absolute z-50 px-2 py-1 text-xs bg-zinc-800 border border-zinc-700 rounded shadow-lg;
+  }
+
+  /* Charts */
+  .chart-container {
+    @apply w-full aspect-[2/1];
+  }
+
+  /* Loading states */
+  .skeleton {
+    @apply animate-pulse bg-zinc-800 rounded;
+  }
+
+  /* Edge curve gradient */
+  .edge-positive {
+    @apply text-emerald-400;
+  }
+  
+  .edge-negative {
+    @apply text-red-400;
+  }
+}
+
+@layer utilities {
+  /* Glassmorphism */
+  .glass {
+    @apply bg-zinc-900/80 backdrop-blur-sm;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent;
+  }
+
+  /* Glow effects */
+  .glow-emerald {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+  
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+
+  /* Mono numbers */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* KaTeX overrides for dark mode */
+.katex {
+  color: #e4e4e7;
+}
+
+.katex .mord {
+  color: #e4e4e7;
+}
+
+/* Recharts overrides */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #27272a;
+}
+
+.recharts-text {
+  fill: #71717a;
+}
+
