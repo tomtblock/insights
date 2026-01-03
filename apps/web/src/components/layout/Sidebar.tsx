@@ -16,6 +16,7 @@ import {
   Shield,
   Compass,
   Sparkles,
+  Globe,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import clsx from 'clsx';
@@ -32,6 +33,7 @@ const navItems = [
   {
     section: 'Intelligence',
     items: [
+      { href: '/intelligence', label: 'Geo Monitor', icon: Globe, badge: 'New', badgeColor: 'red' },
       { href: '/events', label: 'Events', icon: Calendar },
       { href: '/topics', label: 'Topics', icon: Compass, badge: 'AI', badgeColor: 'purple' },
       { href: '/stocks', label: 'Stocks', icon: BarChart3 },
@@ -102,6 +104,7 @@ export function Sidebar() {
                               item.badgeColor === 'emerald' && 'bg-emerald-500/20 text-emerald-400',
                               item.badgeColor === 'purple' && 'bg-purple-500/20 text-purple-400',
                               item.badgeColor === 'blue' && 'bg-blue-500/20 text-blue-400',
+                              item.badgeColor === 'red' && 'bg-red-500/20 text-red-400',
                               !item.badgeColor && 'bg-zinc-700 text-zinc-400'
                             )}>
                               {item.badge}

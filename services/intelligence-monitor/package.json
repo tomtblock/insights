@@ -1,0 +1,27 @@
+{
+  "name": "@arb/intelligence-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@arb/schemas": "*",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "rss-parser": "^3.13.0",
+    "openai": "^4.24.1",
+    "node-cron": "^3.0.3",
+    "date-fns": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.3.0",
+    "tsx": "^4.7.0"
+  }
+}
+
