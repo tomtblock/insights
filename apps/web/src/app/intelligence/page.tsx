@@ -1,652 +1,306 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import Link from 'next/link';
 import { 
-  Globe, RefreshCw, Search, Filter, AlertTriangle, TrendingUp, 
+  Globe, RefreshCw, Search, AlertTriangle, TrendingUp, 
   Clock, ExternalLink, ChevronRight, Zap, Shield, DollarSign,
   Radio, Target, BarChart3, AlertCircle, CheckCircle, XCircle,
   Newspaper, MapPin, Building, Cpu, Ship, Users, Scale, Activity,
   ChevronDown, ChevronUp, Flame, Gauge, TrendingDown, Minus,
-  Crosshair, Bomb, Banknote, Wheat, Wifi, Vote, Crown
+  Crosshair, Bomb, Banknote, Wheat, Wifi, Vote, Crown, Twitter,
+  MessageCircle, Repeat2, Heart, ExternalLink as LinkIcon, Hash,
+  Filter, Layers, Star, Eye
 } from 'lucide-react';
 import clsx from 'clsx';
 
 // ============ TYPES ============
+type DataSource = 'all' | 'news' | 'x-signals';
+type SignalCategory = 'Economy' | 'Politics' | 'Sports' | 'Tech' | 'M&A' | 'Crypto';
+
 interface IntelligenceItem {
   id: string;
+  type: 'news' | 'x-signal';
   title: string;
   summary: string;
-  sourceName: string;
+  source: string;
+  sourceHandle?: string;
+  sourceTier?: 1 | 2 | 3;
   url: string;
-  publishedAt: Date;
-  primaryDomain: string;
-  domains: string[];
-  assessment?: Assessment;
-  flagged: boolean;
-}
-
-interface Assessment {
+  timestamp: Date;
+  category: string;
+  subcategory?: string;
   severity: number;
-  relevance: number;
-  impact: number;
-  urgency: number;
-  compositeScore: number;
-  impactType: string;
-  timeHorizon: string;
-  affectedRegions: string[];
-  affectedSectors: string[];
-  keyPoints: string[];
-  risks: string[];
-  escalationPotential: string;
-  reasoning: string;
-  marketImplications: MarketImplication[];
+  confidence: number;
+  status: 'rumor' | 'developing' | 'confirmed' | 'denied';
+  keywords: string[];
+  entities?: string[];
+  marketImpact?: {
+    assets: string[];
+    direction: 'bullish' | 'bearish' | 'neutral' | 'volatile';
+    magnitude: string;
+    sectors: string[];
+  };
+  engagement?: {
+    retweets: number;
+    replies: number;
+    likes: number;
+  };
+  confirmations?: string[];
 }
-
-interface MarketImplication {
-  asset: string;
-  direction: string;
-  magnitude: string;
-  rationale: string;
-}
-
-interface MacroCategory {
-  name: string;
-  icon: any;
-  color: string;
-  status: 'critical' | 'elevated' | 'moderate' | 'stable';
-  score: number;
-  trend: 'up' | 'down' | 'stable';
-  topRisks: string[];
-  itemCount: number;
-}
-
-// ============ CONSTANTS ============
-const DOMAIN_CATEGORIES = {
-  'Great Power': ['us_foreign_policy', 'china_ccp_policy', 'russia_ukraine_war', 'great_power_summitry', 'taiwan_strait', 'us_presidential_power'],
-  'Military & Nuclear': ['nuclear_deterrence', 'strategic_missile_testing', 'military_modernization', 'nato_posture', 'military_doctrine', 'nuclear_incidents'],
-  'Economic Warfare': ['sanctions_regimes', 'trade_wars', 'semiconductor_controls', 'export_controls', 'central_bank_policy', 'banking_contagion'],
-  'Energy & Resources': ['energy_security', 'opec_decisions', 'critical_minerals', 'food_security_diplomacy', 'fertilizer_geopolitics', 'maritime_chokepoints'],
-  'Regional Hotspots': ['middle_east_wars', 'korean_peninsula', 'south_china_sea', 'africa_stability', 'regional_power_competition'],
-  'Cyber & Tech': ['cyber_conflict', 'ai_competition', 'undersea_cables', 'ransomware_retaliation', 'telecom_standards'],
-  'Stability & Governance': ['coups_backsliding', 'legitimacy_crises', 'election_interference', 'authoritarian_succession', 'civil_wars'],
-  'Information War': ['disinformation', 'censorship_crackdowns', 'press_freedom', 'state_surveillance'],
-};
-
-const DOMAIN_LABELS: Record<string, string> = {
-  us_presidential_power: 'US Presidential Power',
-  us_congress_budget: 'US Congress & Budget',
-  us_foreign_policy: 'US Foreign Policy',
-  us_constitutional_crisis: 'Constitutional Crisis',
-  great_power_summitry: 'Great Power Summitry',
-  backchannel_negotiations: 'Backchannel Talks',
-  ceasefire_talks: 'Ceasefire Negotiations',
-  china_ccp_policy: 'China CCP Policy',
-  taiwan_strait: 'Taiwan Strait',
-  south_china_sea: 'South China Sea',
-  japan_defense: 'Japan Defense',
-  korean_peninsula: 'Korean Peninsula',
-  russia_ukraine_war: 'Russia-Ukraine War',
-  russia_domestic_stability: 'Russia Domestic',
-  nato_posture: 'NATO Posture',
-  eu_integration: 'EU Integration',
-  middle_east_wars: 'Middle East Conflicts',
-  iran_nuclear: 'Iran Nuclear',
-  nuclear_deterrence: 'Nuclear Deterrence',
-  military_modernization: 'Military Modernization',
-  strategic_missile_testing: 'Missile Testing',
-  cyber_conflict: 'Cyber Conflict',
-  sanctions_regimes: 'Sanctions',
-  trade_wars: 'Trade Wars',
-  semiconductor_controls: 'Semiconductor Controls',
-  export_controls: 'Export Controls',
-  central_bank_policy: 'Central Banks',
-  energy_security: 'Energy Security',
-  opec_decisions: 'OPEC+ Decisions',
-  critical_minerals: 'Critical Minerals',
-  maritime_chokepoints: 'Maritime Chokepoints',
-  ai_competition: 'AI Competition',
-  coups_backsliding: 'Coups & Backsliding',
-  legitimacy_crises: 'Legitimacy Crises',
-  election_interference: 'Election Interference',
-  disinformation: 'Disinformation',
-  food_security_diplomacy: 'Food Security',
-  authoritarian_succession: 'Authoritarian Succession',
-  civil_wars: 'Civil Wars',
-  africa_stability: 'Africa Stability',
-  regional_power_competition: 'Regional Power Competition',
-  military_doctrine: 'Military Doctrine',
-  nuclear_incidents: 'Nuclear Incidents',
-  banking_contagion: 'Banking Contagion',
-  fertilizer_geopolitics: 'Fertilizer Geopolitics',
-  undersea_cables: 'Undersea Cables',
-  ransomware_retaliation: 'Ransomware',
-  telecom_standards: 'Telecom Standards',
-  censorship_crackdowns: 'Censorship',
-  press_freedom: 'Press Freedom',
-  state_surveillance: 'State Surveillance',
-};
 
 // ============ MOCK DATA ============
 const MOCK_ITEMS: IntelligenceItem[] = [
+  // X Signals
   {
-    id: '1',
+    id: 'x1',
+    type: 'x-signal',
+    title: 'BREAKING: Houthi forces launch multiple drones toward Red Sea shipping',
+    summary: 'Multiple commercial vessels reporting drone activity in Bab el-Mandeb strait. US Navy monitoring situation. Shipping insurance rates spiking.',
+    source: 'OSINTdefender',
+    sourceHandle: '@sentdefender',
+    sourceTier: 1,
+    url: 'https://x.com/sentdefender/status/123',
+    timestamp: new Date(Date.now() - 15 * 60 * 1000),
+    category: 'Politics',
+    subcategory: 'Conflict OSINT',
+    severity: 9,
+    confidence: 0.88,
+    status: 'developing',
+    keywords: ['drone attack', 'Red Sea', 'shipping', 'Houthi'],
+    entities: ['Bab el-Mandeb', 'US Navy', 'Yemen'],
+    marketImpact: {
+      assets: ['$OIL', '$SHIPPING'],
+      direction: 'bullish',
+      magnitude: 'significant',
+      sectors: ['Energy', 'Shipping', 'Insurance']
+    },
+    engagement: { retweets: 2847, replies: 412, likes: 5621 },
+    confirmations: ['@Reuters', '@ELINTNews']
+  },
+  {
+    id: 'x2',
+    type: 'x-signal',
+    title: 'OPEC+ emergency meeting called for tomorrow - production cuts on table',
+    summary: 'Saudi-led bloc convening emergency session. Sources indicate 500k-1M bpd cut being discussed. Market bracing for announcement.',
+    source: 'Javier Blas',
+    sourceHandle: '@JavierBlas',
+    sourceTier: 1,
+    url: 'https://x.com/JavierBlas/status/456',
+    timestamp: new Date(Date.now() - 45 * 60 * 1000),
+    category: 'Economy',
+    subcategory: 'Commodities',
+    severity: 8,
+    confidence: 0.92,
+    status: 'confirmed',
+    keywords: ['OPEC', 'production cut', 'emergency meeting', 'oil'],
+    entities: ['Saudi Arabia', 'OPEC+', 'Russia'],
+    marketImpact: {
+      assets: ['$CL', '$XLE', '$OXY'],
+      direction: 'bullish',
+      magnitude: 'major',
+      sectors: ['Energy', 'Commodities']
+    },
+    engagement: { retweets: 4521, replies: 876, likes: 12340 },
+    confirmations: ['@EnergyIntel', '@Reuters']
+  },
+  {
+    id: 'x3',
+    type: 'x-signal',
+    title: 'Woj: Lakers finalizing trade for All-Star center - deal imminent',
+    summary: 'Sources tell ESPN the Lakers are finalizing a blockbuster trade. Official announcement expected within hours. Salary matching involves 3 teams.',
+    source: 'Adrian Wojnarowski',
+    sourceHandle: '@wojespn',
+    sourceTier: 1,
+    url: 'https://x.com/wojespn/status/789',
+    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    category: 'Sports',
+    subcategory: 'NBA',
+    severity: 6,
+    confidence: 0.96,
+    status: 'developing',
+    keywords: ['trade', 'Lakers', 'NBA', 'blockbuster'],
+    entities: ['Lakers', 'ESPN'],
+    marketImpact: {
+      assets: [],
+      direction: 'neutral',
+      magnitude: 'minor',
+      sectors: ['Sports Betting']
+    },
+    engagement: { retweets: 15234, replies: 8745, likes: 45678 }
+  },
+  {
+    id: 'x4',
+    type: 'x-signal',
+    title: 'GPT-5 training run completed - internal testing phase beginning',
+    summary: 'Sources familiar confirm OpenAI has completed initial GPT-5 training. Internal red team testing underway. No timeline for release.',
+    source: 'Sam Altman',
+    sourceHandle: '@sama',
+    sourceTier: 1,
+    url: 'https://x.com/sama/status/101',
+    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
+    category: 'Tech',
+    subcategory: 'AI',
+    severity: 7,
+    confidence: 0.85,
+    status: 'rumor',
+    keywords: ['GPT-5', 'training', 'OpenAI', 'AI model'],
+    entities: ['OpenAI', 'GPT-5'],
+    marketImpact: {
+      assets: ['$MSFT', '$NVDA'],
+      direction: 'bullish',
+      magnitude: 'moderate',
+      sectors: ['AI', 'Tech']
+    },
+    engagement: { retweets: 8921, replies: 2341, likes: 34567 }
+  },
+  {
+    id: 'x5',
+    type: 'x-signal',
+    title: 'Stripe in advanced acquisition talks with major fintech - $10B+ valuation',
+    summary: 'Exclusive: Stripe holding advanced discussions to acquire [redacted] fintech. Deal would be largest in company history. Regulatory approval key hurdle.',
+    source: 'DealBook',
+    sourceHandle: '@dealbook',
+    sourceTier: 1,
+    url: 'https://x.com/dealbook/status/202',
+    timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
+    category: 'M&A',
+    subcategory: 'Deals',
+    severity: 7,
+    confidence: 0.78,
+    status: 'rumor',
+    keywords: ['acquisition', 'Stripe', 'fintech', 'deal'],
+    entities: ['Stripe', 'Patrick Collison'],
+    marketImpact: {
+      assets: [],
+      direction: 'bullish',
+      magnitude: 'significant',
+      sectors: ['Fintech', 'Payments']
+    },
+    engagement: { retweets: 3456, replies: 567, likes: 8901 }
+  },
+  // News Items
+  {
+    id: 'n1',
+    type: 'news',
     title: 'China Conducts Largest Military Exercises Near Taiwan Since 2022',
-    summary: 'PLA Eastern Theater Command announces unprecedented live-fire drills involving carrier strike group in waters near Taiwan, US Navy monitoring closely.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    primaryDomain: 'taiwan_strait',
-    domains: ['taiwan_strait', 'china_ccp_policy', 'military_modernization', 'asia_pacific_alliances'],
-    assessment: {
-      severity: 8, relevance: 10, impact: 8, urgency: 9, compositeScore: 8.5,
-      impactType: 'conflict_escalation', timeHorizon: 'immediate',
-      affectedRegions: ['Taiwan', 'China', 'United States', 'Japan'],
-      affectedSectors: ['Defense', 'Semiconductors', 'Shipping', 'Insurance'],
-      keyPoints: ['Largest exercises since Pelosi visit', 'Carrier strike group deployed', 'US and Japan assets repositioning'],
-      risks: ['Accidental escalation', 'TSMC production disruption', 'Regional conflict'],
-      escalationPotential: 'critical',
-      reasoning: 'Unprecedented scale of military activity represents highest Taiwan Strait tensions in years with direct implications for global semiconductor supply.',
-      marketImplications: [
-        { asset: 'TSM', direction: 'bearish', magnitude: 'significant', rationale: 'Production risk' },
-        { asset: 'Defense ETFs', direction: 'bullish', magnitude: 'moderate', rationale: 'Regional tension' },
-        { asset: 'TWD', direction: 'bearish', magnitude: 'moderate', rationale: 'Risk premium' }
-      ]
-    },
-    flagged: true
+    summary: 'PLA Eastern Theater Command announces unprecedented live-fire drills involving carrier strike group in waters near Taiwan.',
+    source: 'Reuters',
+    url: 'https://reuters.com/world/asia',
+    timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000),
+    category: 'Politics',
+    subcategory: 'Taiwan Strait',
+    severity: 8,
+    confidence: 0.95,
+    status: 'confirmed',
+    keywords: ['Taiwan', 'military', 'China', 'exercises'],
+    entities: ['Taiwan', 'China', 'PLA'],
+    marketImpact: {
+      assets: ['$TSM', '$EWT'],
+      direction: 'bearish',
+      magnitude: 'significant',
+      sectors: ['Semiconductors', 'Defense']
+    }
   },
   {
-    id: '2',
+    id: 'n2',
+    type: 'news',
     title: 'Federal Reserve Signals Extended Pause Amid Banking Stress',
-    summary: 'Fed Chair indicates rates may stay higher for longer while monitoring regional bank stress, markets reprice rate cut expectations.',
-    sourceName: 'Bloomberg',
-    url: '#',
-    publishedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    primaryDomain: 'central_bank_policy',
-    domains: ['central_bank_policy', 'banking_contagion', 'geopolitical_risk_markets'],
-    assessment: {
-      severity: 7, relevance: 10, impact: 8, urgency: 7, compositeScore: 7.8,
-      impactType: 'policy_shift', timeHorizon: 'short_term',
-      affectedRegions: ['United States', 'Global'],
-      affectedSectors: ['Banking', 'Real Estate', 'Technology', 'EM'],
-      keyPoints: ['Higher for longer messaging', 'Regional bank monitoring', 'Rate cut repricing'],
-      risks: ['Banking stress acceleration', 'EM capital flight', 'Credit crunch'],
-      escalationPotential: 'medium',
-      reasoning: 'Fed policy shift with banking stability concerns creates cross-asset volatility and EM spillover risks.',
-      marketImplications: [
-        { asset: 'Regional Banks', direction: 'bearish', magnitude: 'significant', rationale: 'NIM pressure' },
-        { asset: 'Gold', direction: 'bullish', magnitude: 'moderate', rationale: 'Haven demand' },
-        { asset: 'EM FX', direction: 'bearish', magnitude: 'moderate', rationale: 'Dollar strength' }
-      ]
-    },
-    flagged: true
-  },
-  {
-    id: '3',
-    title: 'Houthi Forces Strike Multiple Vessels in Red Sea Escalation',
-    summary: 'Iranian-backed Houthis launch coordinated attacks on commercial shipping, major carriers suspend Red Sea transits indefinitely.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    primaryDomain: 'maritime_chokepoints',
-    domains: ['maritime_chokepoints', 'middle_east_wars', 'energy_security', 'shipping_insurance'],
-    assessment: {
-      severity: 8, relevance: 9, impact: 8, urgency: 9, compositeScore: 8.3,
-      impactType: 'supply_disruption', timeHorizon: 'immediate',
-      affectedRegions: ['Middle East', 'Europe', 'Asia'],
-      affectedSectors: ['Shipping', 'Retail', 'Energy', 'Insurance'],
-      keyPoints: ['12% of global trade affected', 'Insurance premiums spiking', 'Cape route adds 10+ days'],
-      risks: ['Prolonged disruption', 'Military escalation', 'Inflation resurgence'],
-      escalationPotential: 'high',
-      reasoning: 'Critical chokepoint disruption with immediate inflation and supply chain implications globally.',
-      marketImplications: [
-        { asset: 'Container Shipping', direction: 'bullish', magnitude: 'major', rationale: 'Rate surge' },
-        { asset: 'Brent', direction: 'bullish', magnitude: 'moderate', rationale: 'Supply risk' },
-        { asset: 'European Retail', direction: 'bearish', magnitude: 'moderate', rationale: 'Inventory delays' }
-      ]
-    },
-    flagged: true
-  },
-  {
-    id: '4',
-    title: 'US Announces New Semiconductor Export Controls Targeting China',
-    summary: 'Commerce Department expands chip export restrictions to include advanced AI accelerators and semiconductor manufacturing equipment.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
-    primaryDomain: 'semiconductor_controls',
-    domains: ['semiconductor_controls', 'export_controls', 'ai_competition', 'trade_wars'],
-    assessment: {
-      severity: 7, relevance: 9, impact: 7, urgency: 6, compositeScore: 7.2,
-      impactType: 'regulatory_change', timeHorizon: 'medium_term',
-      affectedRegions: ['United States', 'China', 'Netherlands', 'Japan'],
-      affectedSectors: ['Semiconductors', 'AI', 'Defense'],
-      keyPoints: ['AI accelerator restrictions', 'Equipment ban expansion', 'Allied coordination'],
-      risks: ['Retaliation measures', 'Supply chain bifurcation'],
-      escalationPotential: 'medium',
-      reasoning: 'Escalation in tech decoupling with significant implications for AI development and chip industry.',
-      marketImplications: [
-        { asset: 'NVIDIA', direction: 'bearish', magnitude: 'moderate', rationale: 'China revenue loss' },
-        { asset: 'ASML', direction: 'volatile', magnitude: 'moderate', rationale: 'Regulatory uncertainty' }
-      ]
-    },
-    flagged: false
-  },
-  {
-    id: '5',
-    title: 'Russia Conducts ICBM Test Amid NATO Nuclear Exercise',
-    summary: 'Russian Strategic Rocket Forces test RS-28 Sarmat ICBM as NATO conducts Steadfast Noon nuclear deterrence exercise.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
-    primaryDomain: 'nuclear_deterrence',
-    domains: ['nuclear_deterrence', 'strategic_missile_testing', 'russia_ukraine_war', 'nato_posture'],
-    assessment: {
-      severity: 7, relevance: 8, impact: 6, urgency: 5, compositeScore: 6.7,
-      impactType: 'security_threat', timeHorizon: 'medium_term',
-      affectedRegions: ['Russia', 'NATO', 'Europe'],
-      affectedSectors: ['Defense'],
-      keyPoints: ['Sarmat "Satan II" test', 'Concurrent NATO exercise', 'Deterrence signaling'],
-      risks: ['Miscalculation', 'Escalation spiral'],
-      escalationPotential: 'medium',
-      reasoning: 'Strategic signaling amid heightened tensions, though part of established deterrence posturing.',
-      marketImplications: [
-        { asset: 'Defense Stocks', direction: 'bullish', magnitude: 'minor', rationale: 'Deterrence spending' }
-      ]
-    },
-    flagged: false
-  },
-  {
-    id: '6',
-    title: 'Mass Protests Erupt Following Disputed Election Results',
-    summary: 'Tens of thousands take to streets in major capital after opposition alleges widespread electoral fraud, security forces deployed.',
-    sourceName: 'AP',
-    url: '#',
-    publishedAt: new Date(Date.now() - 16 * 60 * 60 * 1000),
-    primaryDomain: 'legitimacy_crises',
-    domains: ['legitimacy_crises', 'coups_backsliding', 'election_interference'],
-    assessment: {
-      severity: 6, relevance: 7, impact: 6, urgency: 7, compositeScore: 6.4,
-      impactType: 'political_instability', timeHorizon: 'short_term',
-      affectedRegions: ['Eastern Europe'],
-      affectedSectors: ['Regional Banking', 'FDI'],
-      keyPoints: ['Opposition rejects results', 'International observers concerned', 'Military stance unclear'],
-      risks: ['Violent crackdown', 'Constitutional crisis', 'Regional spillover'],
-      escalationPotential: 'high',
-      reasoning: 'Democratic backsliding event with potential for escalation depending on security force response.',
-      marketImplications: [
-        { asset: 'Regional ETFs', direction: 'bearish', magnitude: 'moderate', rationale: 'Political risk' }
-      ]
-    },
-    flagged: false
-  },
-  {
-    id: '7',
-    title: 'OPEC+ Agrees Deeper Production Cuts Through 2025',
-    summary: 'Saudi Arabia leads coalition to extend and deepen oil production cuts, citing weak demand outlook and market stabilization goals.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 20 * 60 * 60 * 1000),
-    primaryDomain: 'opec_decisions',
-    domains: ['opec_decisions', 'energy_security', 'commodity_cartels'],
-    assessment: {
-      severity: 6, relevance: 9, impact: 7, urgency: 6, compositeScore: 6.8,
-      impactType: 'supply_disruption', timeHorizon: 'short_term',
-      affectedRegions: ['Middle East', 'Global'],
-      affectedSectors: ['Energy', 'Transportation', 'Chemicals'],
-      keyPoints: ['Extended cuts through 2025', 'Saudi voluntary reduction', 'Compliance monitoring'],
-      risks: ['Demand weakness', 'Non-OPEC supply'],
-      escalationPotential: 'low',
-      reasoning: 'Supply management supporting prices with clear market implications.',
-      marketImplications: [
-        { asset: 'Brent', direction: 'bullish', magnitude: 'moderate', rationale: 'Supply tightening' },
-        { asset: 'Energy Stocks', direction: 'bullish', magnitude: 'moderate', rationale: 'Margin support' }
-      ]
-    },
-    flagged: false
-  },
-  {
-    id: '8',
-    title: 'Major Cyberattack Disrupts Critical Infrastructure in NATO Member',
-    summary: 'State-sponsored hackers breach energy grid and government systems, officials attribute attack to hostile state actor.',
-    sourceName: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    primaryDomain: 'cyber_conflict',
-    domains: ['cyber_conflict', 'ransomware_retaliation', 'undersea_cables', 'nato_posture'],
-    assessment: {
-      severity: 7, relevance: 8, impact: 7, urgency: 8, compositeScore: 7.3,
-      impactType: 'security_threat', timeHorizon: 'immediate',
-      affectedRegions: ['Europe', 'NATO'],
-      affectedSectors: ['Utilities', 'Government', 'Cybersecurity'],
-      keyPoints: ['Critical infrastructure targeted', 'State attribution', 'Article 5 discussions'],
-      risks: ['Retaliatory cycle', 'Infrastructure cascades'],
-      escalationPotential: 'high',
-      reasoning: 'Significant cyber escalation against NATO member with potential for broader conflict.',
-      marketImplications: [
-        { asset: 'Cybersecurity ETFs', direction: 'bullish', magnitude: 'moderate', rationale: 'Spending surge' }
-      ]
-    },
-    flagged: false
+    summary: 'Fed Chair indicates rates may stay higher for longer while monitoring regional bank stress.',
+    source: 'Bloomberg',
+    url: 'https://bloomberg.com/markets',
+    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
+    category: 'Economy',
+    subcategory: 'Central Banks',
+    severity: 7,
+    confidence: 0.98,
+    status: 'confirmed',
+    keywords: ['Fed', 'rates', 'banking', 'pause'],
+    entities: ['Federal Reserve', 'Jerome Powell'],
+    marketImpact: {
+      assets: ['$SPY', '$TLT', '$KRE'],
+      direction: 'volatile',
+      magnitude: 'moderate',
+      sectors: ['Banking', 'Equities', 'Rates']
+    }
   }
 ];
 
-// ============ MACRO STATUS COMPONENT ============
-function MacroStatusReport({ items, onCategoryClick }: { 
-  items: IntelligenceItem[]; 
-  onCategoryClick: (category: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-  const categories = useMemo((): MacroCategory[] => {
-    const catConfig: Record<string, { icon: any; color: string }> = {
-      'Great Power': { icon: Crown, color: 'red' },
-      'Military & Nuclear': { icon: Bomb, color: 'orange' },
-      'Economic Warfare': { icon: Banknote, color: 'yellow' },
-      'Energy & Resources': { icon: Flame, color: 'amber' },
-      'Regional Hotspots': { icon: MapPin, color: 'red' },
-      'Cyber & Tech': { icon: Wifi, color: 'purple' },
-      'Stability & Governance': { icon: Vote, color: 'blue' },
-      'Information War': { icon: Radio, color: 'cyan' }
-    };
-
-    return Object.entries(DOMAIN_CATEGORIES).map(([name, domains]) => {
-      const catItems = items.filter(i => i.domains.some(d => domains.includes(d)));
-      const assessed = catItems.filter(i => i.assessment);
-      const avgSeverity = assessed.length > 0
-        ? assessed.reduce((acc, i) => acc + (i.assessment?.severity || 0), 0) / assessed.length
-        : 0;
-      
-      const topItems = assessed
-        .sort((a, b) => (b.assessment?.compositeScore || 0) - (a.assessment?.compositeScore || 0))
-        .slice(0, 3);
-
-      return {
-        name,
-        icon: catConfig[name]?.icon || Globe,
-        color: catConfig[name]?.color || 'zinc',
-        status: avgSeverity >= 7.5 ? 'critical' : avgSeverity >= 6 ? 'elevated' : avgSeverity >= 4 ? 'moderate' : 'stable',
-        score: Math.round(avgSeverity * 10) / 10,
-        trend: Math.random() > 0.5 ? 'up' : Math.random() > 0.5 ? 'down' : 'stable',
-        topRisks: topItems.map(i => i.title.slice(0, 60) + (i.title.length > 60 ? '...' : '')),
-        itemCount: catItems.length
-      };
-    });
-  }, [items]);
-
-  const overallScore = useMemo(() => {
-    const assessed = items.filter(i => i.assessment);
-    if (assessed.length === 0) return 0;
-    return Math.round(
-      assessed.reduce((acc, i) => acc + (i.assessment?.compositeScore || 0), 0) / assessed.length * 10
-    ) / 10;
-  }, [items]);
-
-  const overallStatus = overallScore >= 7.5 ? 'CRITICAL' : overallScore >= 6 ? 'ELEVATED' : overallScore >= 4 ? 'MODERATE' : 'STABLE';
-  const statusColor = overallScore >= 7.5 ? 'red' : overallScore >= 6 ? 'orange' : overallScore >= 4 ? 'yellow' : 'emerald';
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
-      {/* Header */}
-      <div 
-        className="p-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/30 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className={clsx(
-              'p-3 rounded-xl',
-              statusColor === 'red' && 'bg-red-500/20',
-              statusColor === 'orange' && 'bg-orange-500/20',
-              statusColor === 'yellow' && 'bg-yellow-500/20',
-              statusColor === 'emerald' && 'bg-emerald-500/20'
-            )}>
-              <Gauge className={clsx(
-                'w-8 h-8',
-                statusColor === 'red' && 'text-red-400',
-                statusColor === 'orange' && 'text-orange-400',
-                statusColor === 'yellow' && 'text-yellow-400',
-                statusColor === 'emerald' && 'text-emerald-400'
-              )} />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-bold text-white">Global Macro Risk Assessment</h2>
-                <span className={clsx(
-                  'px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide animate-pulse',
-                  statusColor === 'red' && 'bg-red-500/20 text-red-400',
-                  statusColor === 'orange' && 'bg-orange-500/20 text-orange-400',
-                  statusColor === 'yellow' && 'bg-yellow-500/20 text-yellow-400',
-                  statusColor === 'emerald' && 'bg-emerald-500/20 text-emerald-400'
-                )}>
-                  {overallStatus}
-                </span>
-              </div>
-              <p className="text-sm text-zinc-400 mt-0.5">
-                Real-time synthesis across {items.length} intelligence items • Updated {new Date().toLocaleTimeString()}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <p className="text-3xl font-bold text-white tabular-nums">{overallScore}</p>
-              <p className="text-xs text-zinc-500">Composite Score</p>
-            </div>
-            {expanded ? <ChevronUp className="w-5 h-5 text-zinc-500" /> : <ChevronDown className="w-5 h-5 text-zinc-500" />}
-          </div>
-        </div>
-      </div>
-
-      {/* Expanded Content */}
-      {expanded && (
-        <div className="p-4">
-          {/* Category Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            {categories.map(cat => (
-              <CategoryCard 
-                key={cat.name} 
-                category={cat} 
-                selected={selectedCategory === cat.name}
-                onClick={() => {
-                  setSelectedCategory(selectedCategory === cat.name ? null : cat.name);
-                  onCategoryClick(cat.name);
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Selected Category Detail */}
-          {selectedCategory && (
-            <div className="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
-              <h3 className="font-semibold text-white mb-3">{selectedCategory} - Top Risks</h3>
-              <div className="space-y-2">
-                {categories.find(c => c.name === selectedCategory)?.topRisks.map((risk, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
-                    <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                    <span className="text-zinc-300">{risk}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Key Metrics Row */}
-          <div className="grid grid-cols-4 gap-3 mt-4">
-            <MiniStat 
-              label="Critical Items" 
-              value={items.filter(i => (i.assessment?.severity || 0) >= 8).length}
-              icon={AlertTriangle}
-              color="red"
-            />
-            <MiniStat 
-              label="High Urgency" 
-              value={items.filter(i => (i.assessment?.urgency || 0) >= 7).length}
-              icon={Clock}
-              color="orange"
-            />
-            <MiniStat 
-              label="Market Impact" 
-              value={items.filter(i => (i.assessment?.impact || 0) >= 7).length}
-              icon={TrendingUp}
-              color="yellow"
-            />
-            <MiniStat 
-              label="Escalation Risk" 
-              value={items.filter(i => i.assessment?.escalationPotential === 'high' || i.assessment?.escalationPotential === 'critical').length}
-              icon={Activity}
-              color="purple"
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CategoryCard({ category, selected, onClick }: { 
-  category: MacroCategory; 
-  selected: boolean;
-  onClick: () => void;
-}) {
-  const Icon = category.icon;
-  const statusColors: Record<string, { bg: string; text: string; border: string }> = {
-    critical: { bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/50' },
-    elevated: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/50' },
-    moderate: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/50' },
-    stable: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/50' }
-  };
-  const colors = statusColors[category.status];
-
-  return (
-    <div 
-      onClick={onClick}
-      className={clsx(
-        'p-3 rounded-xl border cursor-pointer transition-all',
-        selected 
-          ? `${colors.bg} ${colors.border} ring-1 ring-offset-1 ring-offset-zinc-900 ${colors.border.replace('border-', 'ring-')}`
-          : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'
-      )}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className={clsx('p-1.5 rounded-lg', colors.bg)}>
-          <Icon className={clsx('w-4 h-4', colors.text)} />
-        </div>
-        <div className="flex items-center gap-1">
-          {category.trend === 'up' && <TrendingUp className="w-3 h-3 text-red-400" />}
-          {category.trend === 'down' && <TrendingDown className="w-3 h-3 text-emerald-400" />}
-          {category.trend === 'stable' && <Minus className="w-3 h-3 text-zinc-500" />}
-          <span className={clsx('text-lg font-bold', colors.text)}>{category.score || '-'}</span>
-        </div>
-      </div>
-      <p className="text-sm font-medium text-white truncate">{category.name}</p>
-      <div className="flex items-center justify-between mt-1">
-        <span className={clsx('text-xs font-medium uppercase', colors.text)}>{category.status}</span>
-        <span className="text-xs text-zinc-500">{category.itemCount} items</span>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
-  const colorClasses: Record<string, string> = {
-    red: 'bg-red-500/10 text-red-400',
-    orange: 'bg-orange-500/10 text-orange-400',
-    yellow: 'bg-yellow-500/10 text-yellow-400',
-    purple: 'bg-purple-500/10 text-purple-400',
-  };
-
-  return (
-    <div className="p-3 bg-zinc-800/50 rounded-lg flex items-center gap-3">
-      <div className={clsx('p-2 rounded-lg', colorClasses[color])}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div>
-        <p className="text-xl font-bold text-white">{value}</p>
-        <p className="text-xs text-zinc-500">{label}</p>
-      </div>
-    </div>
-  );
-}
+const CATEGORIES = ['All', 'Economy', 'Politics', 'Sports', 'Tech', 'M&A', 'Crypto'];
 
 // ============ MAIN PAGE ============
 export default function IntelligencePage() {
-  const [items] = useState<IntelligenceItem[]>(MOCK_ITEMS);
+  const [items, setItems] = useState<IntelligenceItem[]>(MOCK_ITEMS);
+  const [dataSource, setDataSource] = useState<DataSource>('all');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [minSeverity, setMinSeverity] = useState(1);
   const [selectedItem, setSelectedItem] = useState<IntelligenceItem | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-
-  useEffect(() => {
-    const interval = setInterval(() => setLastUpdated(new Date()), 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const [showAccountRegistry, setShowAccountRegistry] = useState(false);
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
+      if (dataSource === 'news' && item.type !== 'news') return false;
+      if (dataSource === 'x-signals' && item.type !== 'x-signal') return false;
+      if (selectedCategory !== 'All' && item.category !== selectedCategory) return false;
+      if (item.severity < minSeverity) return false;
       if (search) {
-        const searchLower = search.toLowerCase();
-        if (!item.title.toLowerCase().includes(searchLower) &&
-            !item.summary.toLowerCase().includes(searchLower)) {
+        const q = search.toLowerCase();
+        if (!item.title.toLowerCase().includes(q) && 
+            !item.summary.toLowerCase().includes(q) &&
+            !item.keywords.some(k => k.toLowerCase().includes(q))) {
           return false;
         }
-      }
-      if (selectedCategory) {
-        const categoryDomains = DOMAIN_CATEGORIES[selectedCategory as keyof typeof DOMAIN_CATEGORIES] || [];
-        if (!item.domains.some(d => categoryDomains.includes(d))) {
-          return false;
-        }
-      }
-      if (item.assessment && item.assessment.severity < minSeverity) {
-        return false;
       }
       return true;
-    }).sort((a, b) => {
-      const scoreA = a.assessment?.compositeScore || 0;
-      const scoreB = b.assessment?.compositeScore || 0;
-      if (scoreB !== scoreA) return scoreB - scoreA;
-      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
-    });
-  }, [items, search, selectedCategory, minSeverity]);
+    }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }, [items, dataSource, selectedCategory, search, minSeverity]);
+
+  const stats = useMemo(() => ({
+    total: filteredItems.length,
+    xSignals: filteredItems.filter(i => i.type === 'x-signal').length,
+    news: filteredItems.filter(i => i.type === 'news').length,
+    critical: filteredItems.filter(i => i.severity >= 8).length,
+    confirmed: filteredItems.filter(i => i.status === 'confirmed').length
+  }), [filteredItems]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-      setLastUpdated(new Date());
-    }, 2000);
-  };
-
-  const handleCategoryClick = (category: string) => {
-    setSelectedCategory(prev => prev === category ? null : category);
+    setTimeout(() => setIsRefreshing(false), 1500);
   };
 
   return (
     <div className="min-h-screen bg-zinc-950">
       {/* Header */}
-      <div className="border-b border-zinc-800 bg-zinc-900/50 sticky top-0 z-10 backdrop-blur-sm">
+      <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-800">
         <div className="max-w-[1800px] mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-2 bg-gradient-to-br from-red-500/20 to-orange-500/20 rounded-lg border border-red-500/30">
-                <Globe className="w-6 h-6 text-red-400" />
+              <div className="p-2.5 bg-gradient-to-br from-red-500/20 to-orange-500/20 rounded-xl border border-red-500/30">
+                <Globe className="w-7 h-7 text-red-400" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white">Geopolitical Intelligence Monitor</h1>
-                <p className="text-sm text-zinc-400">AI-powered threat assessment • 100+ domains • Real-time analysis</p>
+                <h1 className="text-2xl font-bold text-white">Intelligence Monitor</h1>
+                <div className="flex items-center gap-3 text-sm text-zinc-400">
+                  <span>News + X Signals • Real-time Market Intelligence</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    Live
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <span className="text-sm text-emerald-400 font-medium">Live</span>
-              </div>
-              <span className="text-sm text-zinc-500">Updated {lastUpdated.toLocaleTimeString()}</span>
+              <button
+                onClick={() => setShowAccountRegistry(!showAccountRegistry)}
+                className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                Account Registry
+              </button>
               <button
                 onClick={handleRefresh}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm font-medium transition-colors"
               >
                 <RefreshCw className={clsx('w-4 h-4', isRefreshing && 'animate-spin')} />
                 Refresh
@@ -657,46 +311,88 @@ export default function IntelligencePage() {
       </div>
 
       <div className="max-w-[1800px] mx-auto px-6 py-6">
-        {/* Macro Status Report */}
-        <MacroStatusReport items={items} onCategoryClick={handleCategoryClick} />
+        {/* Data Source Tabs */}
+        <div className="flex items-center gap-2 mb-6">
+          <button
+            onClick={() => setDataSource('all')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+              dataSource === 'all'
+                ? 'bg-zinc-800 text-white'
+                : 'text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <Layers className="w-4 h-4" />
+            All Sources
+            <span className="px-1.5 py-0.5 bg-zinc-700 rounded text-xs">{stats.total}</span>
+          </button>
+          <button
+            onClick={() => setDataSource('x-signals')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+              dataSource === 'x-signals'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <Twitter className="w-4 h-4" />
+            X Signals
+            <span className={clsx(
+              'px-1.5 py-0.5 rounded text-xs',
+              dataSource === 'x-signals' ? 'bg-blue-500/30' : 'bg-zinc-700'
+            )}>{stats.xSignals}</span>
+          </button>
+          <button
+            onClick={() => setDataSource('news')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
+              dataSource === 'news'
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                : 'text-zinc-500 hover:text-zinc-300'
+            )}
+          >
+            <Newspaper className="w-4 h-4" />
+            News
+            <span className={clsx(
+              'px-1.5 py-0.5 rounded text-xs',
+              dataSource === 'news' ? 'bg-purple-500/30' : 'bg-zinc-700'
+            )}>{stats.news}</span>
+          </button>
+          <div className="flex-1" />
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-zinc-500">Critical:</span>
+            <span className="px-2 py-0.5 bg-red-500/20 text-red-400 rounded font-bold">{stats.critical}</span>
+            <span className="text-zinc-500 ml-2">Confirmed:</span>
+            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded font-bold">{stats.confirmed}</span>
+          </div>
+        </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-zinc-900 border border-zinc-800 rounded-xl">
-          <div className="relative flex-1 min-w-[300px] max-w-md">
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search intelligence..."
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-red-500"
+              placeholder="Search signals, keywords, entities..."
+              className="w-full pl-10 pr-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-red-500/50"
             />
           </div>
 
           <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setSelectedCategory(null)}
-              className={clsx(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                !selectedCategory
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                  : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600'
-              )}
-            >
-              All
-            </button>
-            {Object.keys(DOMAIN_CATEGORIES).map(category => (
+            {CATEGORIES.map(cat => (
               <button
-                key={category}
-                onClick={() => setSelectedCategory(category === selectedCategory ? null : category)}
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
                 className={clsx(
                   'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                  selectedCategory === category
+                  selectedCategory === cat
                     ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                     : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600'
                 )}
               >
-                {category}
+                {cat}
               </button>
             ))}
           </div>
@@ -715,12 +411,12 @@ export default function IntelligencePage() {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Feed */}
           <div className="lg:col-span-2 space-y-4">
             {filteredItems.map(item => (
-              <IntelligenceCard
+              <SignalCard
                 key={item.id}
                 item={item}
                 isSelected={selectedItem?.id === item.id}
@@ -729,7 +425,7 @@ export default function IntelligencePage() {
             ))}
             {filteredItems.length === 0 && (
               <div className="text-center py-16 text-zinc-500">
-                No intelligence items match your filters.
+                No signals match your filters
               </div>
             )}
           </div>
@@ -741,107 +437,151 @@ export default function IntelligencePage() {
             ) : (
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center sticky top-24">
                 <Target className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                <p className="text-zinc-500">Select an item to view detailed assessment</p>
+                <p className="text-zinc-500">Select a signal to view details</p>
+                <p className="text-xs text-zinc-600 mt-2">Includes source info, market impact, and keywords</p>
               </div>
             )}
           </div>
         </div>
+
+        {/* Account Registry Modal */}
+        {showAccountRegistry && (
+          <AccountRegistryModal onClose={() => setShowAccountRegistry(false)} />
+        )}
       </div>
     </div>
   );
 }
 
-// ============ INTELLIGENCE CARD ============
-function IntelligenceCard({ item, isSelected, onClick }: { 
-  item: IntelligenceItem; 
+// ============ SIGNAL CARD ============
+function SignalCard({ item, isSelected, onClick }: {
+  item: IntelligenceItem;
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const severity = item.assessment?.severity || 0;
-  const severityColor = getSeverityColor(severity);
+  const isXSignal = item.type === 'x-signal';
+  const severityColor = getSeverityColor(item.severity);
 
   return (
-    <div 
+    <div
       onClick={onClick}
       className={clsx(
         'bg-zinc-900 border rounded-xl overflow-hidden cursor-pointer transition-all',
-        isSelected ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-zinc-800 hover:border-zinc-700'
+        isSelected ? 'border-red-500/50 ring-1 ring-red-500/20' : 'border-zinc-800 hover:border-zinc-700',
+        item.severity >= 8 && 'ring-1 ring-red-500/20'
       )}
     >
       <div className="p-5">
+        {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-3">
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              {item.flagged && (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded animate-pulse">
-                  <AlertTriangle className="w-3 h-3" />
-                  CRITICAL
-                </span>
-              )}
-              <span className="text-xs text-zinc-500">{item.sourceName}</span>
-              <span className="text-xs text-zinc-600">•</span>
-              <span className="text-xs text-zinc-500">{formatTimeAgo(item.publishedAt)}</span>
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              {/* Source Badge */}
+              <div className={clsx(
+                'flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium',
+                isXSignal ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+              )}>
+                {isXSignal ? <Twitter className="w-3 h-3" /> : <Newspaper className="w-3 h-3" />}
+                {item.source}
+                {item.sourceTier && (
+                  <span className="ml-1 px-1 bg-zinc-800 rounded text-[10px]">T{item.sourceTier}</span>
+                )}
+              </div>
+              
+              {/* Status */}
+              <span className={clsx(
+                'px-2 py-0.5 rounded text-xs font-medium',
+                item.status === 'confirmed' && 'bg-emerald-500/20 text-emerald-400',
+                item.status === 'developing' && 'bg-yellow-500/20 text-yellow-400',
+                item.status === 'rumor' && 'bg-zinc-700 text-zinc-400',
+                item.status === 'denied' && 'bg-red-500/20 text-red-400'
+              )}>
+                {item.status}
+              </span>
+
+              {/* Category */}
+              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+                {item.category}
+              </span>
+
+              {/* Time */}
+              <span className="text-xs text-zinc-500">
+                {formatTimeAgo(item.timestamp)}
+              </span>
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2 line-clamp-2">{item.title}</h3>
+
+            <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
             <p className="text-sm text-zinc-400 line-clamp-2">{item.summary}</p>
           </div>
-          
-          {item.assessment && (
-            <div className="flex-shrink-0 text-center">
-              <div className={clsx(
-                'w-14 h-14 rounded-xl flex items-center justify-center text-xl font-bold',
-                severityColor.bg, severityColor.text
-              )}>
-                {severity}
-              </div>
-              <p className="text-xs text-zinc-500 mt-1">Severity</p>
+
+          {/* Severity Score */}
+          <div className="flex-shrink-0 text-center">
+            <div className={clsx(
+              'w-14 h-14 rounded-xl flex items-center justify-center text-xl font-bold',
+              severityColor.bg, severityColor.text
+            )}>
+              {item.severity}
             </div>
-          )}
+            <p className="text-xs text-zinc-500 mt-1">Severity</p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={clsx(
-            'px-2 py-0.5 rounded text-xs font-medium',
-            getDomainColor(item.primaryDomain)
-          )}>
-            {DOMAIN_LABELS[item.primaryDomain] || item.primaryDomain}
-          </span>
-          {item.assessment && (
-            <>
-              <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
-                {item.assessment.impactType.replace(/_/g, ' ')}
-              </span>
-              <span className={clsx(
-                'px-2 py-0.5 rounded text-xs',
-                item.assessment.escalationPotential === 'high' || item.assessment.escalationPotential === 'critical'
-                  ? 'bg-red-500/20 text-red-400'
-                  : item.assessment.escalationPotential === 'medium'
-                  ? 'bg-yellow-500/20 text-yellow-400'
-                  : 'bg-zinc-800 text-zinc-400'
-              )}>
-                {item.assessment.escalationPotential} escalation
-              </span>
-            </>
-          )}
+        {/* Keywords */}
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          {item.keywords.slice(0, 5).map((kw, i) => (
+            <span key={i} className="flex items-center gap-1 px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
+              <Hash className="w-3 h-3" />
+              {kw}
+            </span>
+          ))}
         </div>
 
-        {item.assessment && item.assessment.marketImplications.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-zinc-800">
-            <div className="flex gap-2 flex-wrap">
-              {item.assessment.marketImplications.slice(0, 4).map((impl, i) => (
-                <span 
-                  key={i}
-                  className={clsx(
-                    'px-2 py-0.5 rounded text-xs font-medium',
-                    impl.direction === 'bullish' ? 'bg-emerald-500/20 text-emerald-400' :
-                    impl.direction === 'bearish' ? 'bg-red-500/20 text-red-400' :
-                    'bg-zinc-700 text-zinc-300'
-                  )}
-                >
-                  {impl.asset} {impl.direction === 'bullish' ? '↑' : impl.direction === 'bearish' ? '↓' : '~'}
-                </span>
-              ))}
-            </div>
+        {/* Market Impact */}
+        {item.marketImpact && (
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <span className={clsx(
+              'px-2 py-0.5 rounded text-xs font-medium',
+              item.marketImpact.direction === 'bullish' && 'bg-emerald-500/20 text-emerald-400',
+              item.marketImpact.direction === 'bearish' && 'bg-red-500/20 text-red-400',
+              item.marketImpact.direction === 'volatile' && 'bg-amber-500/20 text-amber-400',
+              item.marketImpact.direction === 'neutral' && 'bg-zinc-700 text-zinc-400'
+            )}>
+              {item.marketImpact.direction} • {item.marketImpact.magnitude}
+            </span>
+            {item.marketImpact.assets.map((asset, i) => (
+              <span key={i} className="px-2 py-0.5 bg-zinc-700 text-zinc-300 rounded text-xs font-mono">
+                {asset}
+              </span>
+            ))}
+            {item.marketImpact.sectors.slice(0, 3).map((sector, i) => (
+              <span key={i} className="px-2 py-0.5 bg-zinc-800 text-zinc-500 rounded text-xs">
+                {sector}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* X Signal Engagement */}
+        {isXSignal && item.engagement && (
+          <div className="flex items-center gap-4 pt-3 border-t border-zinc-800">
+            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <Repeat2 className="w-3.5 h-3.5" />
+              {formatNumber(item.engagement.retweets)}
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <MessageCircle className="w-3.5 h-3.5" />
+              {formatNumber(item.engagement.replies)}
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <Heart className="w-3.5 h-3.5" />
+              {formatNumber(item.engagement.likes)}
+            </span>
+            {item.confirmations && item.confirmations.length > 0 && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400 ml-auto">
+                <CheckCircle className="w-3.5 h-3.5" />
+                Confirmed by {item.confirmations.length}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -851,145 +591,296 @@ function IntelligenceCard({ item, isSelected, onClick }: {
 
 // ============ DETAIL PANEL ============
 function DetailPanel({ item, onClose }: { item: IntelligenceItem; onClose: () => void }) {
-  const assessment = item.assessment;
-  if (!assessment) return null;
+  const isXSignal = item.type === 'x-signal';
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden sticky top-24">
       <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-        <h3 className="font-semibold text-white">Assessment Details</h3>
+        <h3 className="font-semibold text-white">Signal Details</h3>
         <button onClick={onClose} className="p-1 hover:bg-zinc-800 rounded">
           <XCircle className="w-5 h-5 text-zinc-500" />
         </button>
       </div>
-      
+
       <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <ScoreBox label="Severity" value={assessment.severity} color="red" />
-          <ScoreBox label="Relevance" value={assessment.relevance} color="blue" />
-          <ScoreBox label="Impact" value={assessment.impact} color="orange" />
-          <ScoreBox label="Urgency" value={assessment.urgency} color="yellow" />
-        </div>
-
+        {/* Source Info */}
         <div className="p-3 bg-zinc-800/50 rounded-lg">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-zinc-400">Composite Score</span>
-            <span className="text-xl font-bold text-white">{assessment.compositeScore}</span>
+          <div className="flex items-center gap-3 mb-2">
+            {isXSignal ? (
+              <Twitter className="w-5 h-5 text-blue-400" />
+            ) : (
+              <Newspaper className="w-5 h-5 text-purple-400" />
+            )}
+            <div>
+              <p className="font-medium text-white">{item.source}</p>
+              {item.sourceHandle && (
+                <p className="text-sm text-zinc-400">{item.sourceHandle}</p>
+              )}
+            </div>
+            {item.sourceTier && (
+              <span className={clsx(
+                'ml-auto px-2 py-1 rounded text-xs font-bold',
+                item.sourceTier === 1 && 'bg-emerald-500/20 text-emerald-400',
+                item.sourceTier === 2 && 'bg-blue-500/20 text-blue-400',
+                item.sourceTier === 3 && 'bg-zinc-700 text-zinc-400'
+              )}>
+                Tier {item.sourceTier}
+              </span>
+            )}
           </div>
-          <div className="w-full h-2 bg-zinc-700 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-emerald-500 via-yellow-500 to-red-500"
-              style={{ width: `${assessment.compositeScore * 10}%` }}
-            />
+          <p className="text-xs text-zinc-500">{item.subcategory}</p>
+        </div>
+
+        {/* Confidence & Severity */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
+            <p className="text-2xl font-bold text-white">{item.severity}</p>
+            <p className="text-xs text-zinc-500">Severity</p>
+          </div>
+          <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
+            <p className="text-2xl font-bold text-white">{Math.round(item.confidence * 100)}%</p>
+            <p className="text-xs text-zinc-500">Confidence</p>
           </div>
         </div>
 
-        <div>
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">AI Analysis</h4>
-          <p className="text-sm text-zinc-400">{assessment.reasoning}</p>
-        </div>
-
-        <div>
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Key Points</h4>
-          <ul className="space-y-1">
-            {assessment.keyPoints.map((point, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-zinc-400">
-                <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
-                {point}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {assessment.risks.length > 0 && (
+        {/* Confirmations */}
+        {item.confirmations && item.confirmations.length > 0 && (
           <div>
-            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Risks</h4>
-            <ul className="space-y-1">
-              {assessment.risks.map((risk, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-zinc-400">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                  {risk}
-                </li>
+            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Confirmed By</h4>
+            <div className="flex flex-wrap gap-2">
+              {item.confirmations.map((handle, i) => (
+                <span key={i} className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-xs">
+                  {handle}
+                </span>
               ))}
-            </ul>
+            </div>
           </div>
         )}
 
+        {/* Keywords */}
         <div>
-          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Market Implications</h4>
-          <div className="space-y-2">
-            {assessment.marketImplications.map((impl, i) => (
-              <div key={i} className="p-2 bg-zinc-800/50 rounded-lg">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-white">{impl.asset}</span>
-                  <span className={clsx(
-                    'px-2 py-0.5 rounded text-xs font-bold uppercase',
-                    impl.direction === 'bullish' ? 'bg-emerald-500/20 text-emerald-400' :
-                    impl.direction === 'bearish' ? 'bg-red-500/20 text-red-400' :
-                    'bg-zinc-700 text-zinc-300'
-                  )}>
-                    {impl.direction} ({impl.magnitude})
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-500">{impl.rationale}</p>
-              </div>
+          <h4 className="text-sm font-semibold text-zinc-300 mb-2">Keywords Matched</h4>
+          <div className="flex flex-wrap gap-2">
+            {item.keywords.map((kw, i) => (
+              <span key={i} className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-xs">
+                {kw}
+              </span>
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Entities */}
+        {item.entities && item.entities.length > 0 && (
           <div>
-            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Regions</h4>
-            <div className="flex flex-wrap gap-1">
-              {assessment.affectedRegions.map((region, i) => (
-                <span key={i} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
-                  {region}
+            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Entities</h4>
+            <div className="flex flex-wrap gap-2">
+              {item.entities.map((entity, i) => (
+                <span key={i} className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs">
+                  {entity}
                 </span>
               ))}
             </div>
           </div>
-          <div>
-            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Sectors</h4>
-            <div className="flex flex-wrap gap-1">
-              {assessment.affectedSectors.map((sector, i) => (
-                <span key={i} className="px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded text-xs">
-                  {sector}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
+        )}
 
-        <a 
+        {/* Market Impact */}
+        {item.marketImpact && (
+          <div>
+            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Market Impact</h4>
+            <div className="p-3 bg-zinc-800/50 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-500">Direction</span>
+                <span className={clsx(
+                  'px-2 py-0.5 rounded text-xs font-bold uppercase',
+                  item.marketImpact.direction === 'bullish' && 'bg-emerald-500/20 text-emerald-400',
+                  item.marketImpact.direction === 'bearish' && 'bg-red-500/20 text-red-400',
+                  item.marketImpact.direction === 'volatile' && 'bg-amber-500/20 text-amber-400'
+                )}>
+                  {item.marketImpact.direction}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-500">Magnitude</span>
+                <span className="text-sm text-white">{item.marketImpact.magnitude}</span>
+              </div>
+              {item.marketImpact.assets.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-zinc-500">Assets</span>
+                  <span className="text-sm font-mono text-white">
+                    {item.marketImpact.assets.join(', ')}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-zinc-500">Sectors</span>
+                <span className="text-sm text-white">{item.marketImpact.sectors.join(', ')}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Engagement (X Signals) */}
+        {isXSignal && item.engagement && (
+          <div>
+            <h4 className="text-sm font-semibold text-zinc-300 mb-2">Engagement</h4>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="p-2 bg-zinc-800/50 rounded-lg text-center">
+                <Repeat2 className="w-4 h-4 mx-auto text-zinc-500 mb-1" />
+                <p className="text-lg font-bold text-white">{formatNumber(item.engagement.retweets)}</p>
+                <p className="text-[10px] text-zinc-500">Retweets</p>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded-lg text-center">
+                <MessageCircle className="w-4 h-4 mx-auto text-zinc-500 mb-1" />
+                <p className="text-lg font-bold text-white">{formatNumber(item.engagement.replies)}</p>
+                <p className="text-[10px] text-zinc-500">Replies</p>
+              </div>
+              <div className="p-2 bg-zinc-800/50 rounded-lg text-center">
+                <Heart className="w-4 h-4 mx-auto text-zinc-500 mb-1" />
+                <p className="text-lg font-bold text-white">{formatNumber(item.engagement.likes)}</p>
+                <p className="text-[10px] text-zinc-500">Likes</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* View Source */}
+        <a
           href={item.url}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-2 w-full p-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors"
         >
-          Read Full Article <ExternalLink className="w-4 h-4" />
+          View Source <ExternalLink className="w-4 h-4" />
         </a>
       </div>
     </div>
   );
 }
 
-function ScoreBox({ label, value, color }: { label: string; value: number; color: string }) {
-  const colorClasses: Record<string, string> = {
-    red: 'text-red-400',
-    blue: 'text-blue-400',
-    orange: 'text-orange-400',
-    yellow: 'text-yellow-400',
-  };
+// ============ ACCOUNT REGISTRY MODAL ============
+function AccountRegistryModal({ onClose }: { onClose: () => void }) {
+  const [filterCategory, setFilterCategory] = useState<string>('All');
+
+  const accounts = [
+    // Economy
+    { handle: '@JavierBlas', name: 'Javier Blas', category: 'Economy', subdomain: 'Commodities', tier: 1, credibility: 0.95 },
+    { handle: '@EnergyIntel', name: 'Energy Intelligence', category: 'Economy', subdomain: 'Energy', tier: 1, credibility: 0.92 },
+    { handle: '@MacroAlf', name: 'Alfonso Peccatiello', category: 'Economy', subdomain: 'Macro', tier: 2, credibility: 0.88 },
+    // Politics
+    { handle: '@Reuters', name: 'Reuters', category: 'Politics', subdomain: 'Global', tier: 1, credibility: 0.98 },
+    { handle: '@sentdefender', name: 'OSINTdefender', category: 'Politics', subdomain: 'Conflict OSINT', tier: 1, credibility: 0.90 },
+    { handle: '@NatashaBertrand', name: 'Natasha Bertrand', category: 'Politics', subdomain: 'Security', tier: 1, credibility: 0.92 },
+    // Sports
+    { handle: '@FabrizioRomano', name: 'Fabrizio Romano', category: 'Sports', subdomain: 'Soccer', tier: 1, credibility: 0.96 },
+    { handle: '@wojespn', name: 'Adrian Wojnarowski', category: 'Sports', subdomain: 'NBA', tier: 1, credibility: 0.97 },
+    { handle: '@AdamSchefter', name: 'Adam Schefter', category: 'Sports', subdomain: 'NFL', tier: 1, credibility: 0.95 },
+    // Tech
+    { handle: '@sama', name: 'Sam Altman', category: 'Tech', subdomain: 'AI', tier: 1, credibility: 0.98 },
+    { handle: '@karpathy', name: 'Andrej Karpathy', category: 'Tech', subdomain: 'AI Research', tier: 1, credibility: 0.96 },
+    // M&A
+    { handle: '@dealbook', name: 'DealBook', category: 'M&A', subdomain: 'Deals', tier: 1, credibility: 0.95 },
+    { handle: '@axios', name: 'Axios', category: 'M&A', subdomain: 'Deals', tier: 1, credibility: 0.92 },
+    // Crypto
+    { handle: '@TheBlock__', name: 'The Block', category: 'Crypto', subdomain: 'Crypto News', tier: 1, credibility: 0.90 },
+  ];
+
+  const filtered = filterCategory === 'All' 
+    ? accounts 
+    : accounts.filter(a => a.category === filterCategory);
 
   return (
-    <div className="p-3 bg-zinc-800/50 rounded-lg text-center">
-      <p className={clsx('text-2xl font-bold', colorClasses[color])}>{value}</p>
-      <p className="text-xs text-zinc-500">{label}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
+        <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-400" />
+              X Account Registry
+            </h2>
+            <p className="text-sm text-zinc-400 mt-1">Curated high-signal accounts for market intelligence</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-lg">
+            <XCircle className="w-5 h-5 text-zinc-400" />
+          </button>
+        </div>
+
+        <div className="p-4 border-b border-zinc-800">
+          <div className="flex gap-2">
+            {['All', 'Economy', 'Politics', 'Sports', 'Tech', 'M&A', 'Crypto'].map(cat => (
+              <button
+                key={cat}
+                onClick={() => setFilterCategory(cat)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  filterCategory === cat
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-4 overflow-y-auto max-h-[50vh]">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <th className="pb-3">Account</th>
+                <th className="pb-3">Category</th>
+                <th className="pb-3">Subdomain</th>
+                <th className="pb-3 text-center">Tier</th>
+                <th className="pb-3 text-right">Credibility</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800">
+              {filtered.map((acc, i) => (
+                <tr key={i} className="hover:bg-zinc-800/30">
+                  <td className="py-3">
+                    <div>
+                      <p className="font-medium text-white">{acc.name}</p>
+                      <p className="text-sm text-blue-400">{acc.handle}</p>
+                    </div>
+                  </td>
+                  <td className="py-3">
+                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
+                      {acc.category}
+                    </span>
+                  </td>
+                  <td className="py-3 text-sm text-zinc-400">{acc.subdomain}</td>
+                  <td className="py-3 text-center">
+                    <span className={clsx(
+                      'px-2 py-1 rounded text-xs font-bold',
+                      acc.tier === 1 && 'bg-emerald-500/20 text-emerald-400',
+                      acc.tier === 2 && 'bg-blue-500/20 text-blue-400',
+                      acc.tier === 3 && 'bg-zinc-700 text-zinc-400'
+                    )}>
+                      T{acc.tier}
+                    </span>
+                  </td>
+                  <td className="py-3 text-right">
+                    <span className="font-mono text-sm text-white">{(acc.credibility * 100).toFixed(0)}%</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="p-4 border-t border-zinc-800 bg-zinc-800/30">
+          <p className="text-xs text-zinc-500">
+            <strong>Tier 1:</strong> Primary sources, high accuracy, breaking news.{' '}
+            <strong>Tier 2:</strong> Interpreters, analysts, domain experts.{' '}
+            <strong>Tier 3:</strong> Aggregators, catch-all coverage.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ============ UTILITIES ============
+// ============ HELPERS ============
 function getSeverityColor(severity: number): { bg: string; text: string } {
   if (severity >= 9) return { bg: 'bg-red-500/20', text: 'text-red-400' };
   if (severity >= 7) return { bg: 'bg-orange-500/20', text: 'text-orange-400' };
@@ -998,25 +889,9 @@ function getSeverityColor(severity: number): { bg: string; text: string } {
   return { bg: 'bg-zinc-500/20', text: 'text-zinc-400' };
 }
 
-function getDomainColor(domain: string): string {
-  const colorMap: Record<string, string> = {
-    taiwan_strait: 'bg-red-500/20 text-red-400',
-    china_ccp_policy: 'bg-red-500/20 text-red-400',
-    russia_ukraine_war: 'bg-orange-500/20 text-orange-400',
-    middle_east_wars: 'bg-orange-500/20 text-orange-400',
-    central_bank_policy: 'bg-blue-500/20 text-blue-400',
-    semiconductor_controls: 'bg-purple-500/20 text-purple-400',
-    maritime_chokepoints: 'bg-cyan-500/20 text-cyan-400',
-    energy_security: 'bg-amber-500/20 text-amber-400',
-    nuclear_deterrence: 'bg-red-500/20 text-red-400',
-    cyber_conflict: 'bg-purple-500/20 text-purple-400',
-  };
-  return colorMap[domain] || 'bg-zinc-500/20 text-zinc-400';
-}
-
 function formatTimeAgo(date: Date): string {
   const now = new Date();
-  const diffMs = now.getTime() - new Date(date).getTime();
+  const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
@@ -1024,4 +899,10 @@ function formatTimeAgo(date: Date): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   return `${diffDays}d ago`;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return n.toString();
 }
