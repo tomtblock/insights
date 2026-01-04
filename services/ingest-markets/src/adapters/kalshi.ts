@@ -1,284 +1,596 @@
 /**
- * Kalshi Adapter
+ * Kalshi API Integration
  * 
- * Fetches data from Kalshi's trading API.
- * CFTC-regulated exchange with CLOB order books.
+ * WebSocket: wss://api.elections.kalshi.com/trade-api/ws/v2
+ * REST: https://api.elections.kalshi.com/trade-api/v2
+ * 
+ * Documentation: https://trading-api.readme.io/reference
  */
 
 import axios, { AxiosInstance } from 'axios';
-import type { VenueAdapter, AdapterConfig, RawMarket, RawLiquidity, RawOrderBook } from './types';
-import type { Venue } from '@arb/schemas';
+import WebSocket from 'ws';
+import { EventEmitter } from 'events';
 
-interface KalshiMarket {
+// ============ API ENDPOINTS ============
+const KALSHI_WS_URL = 'wss://api.elections.kalshi.com/trade-api/ws/v2';
+const KALSHI_REST_URL = 'https://api.elections.kalshi.com/trade-api/v2';
+const KALSHI_DEMO_REST_URL = 'https://demo-api.kalshi.co/trade-api/v2';
+
+// ============ TYPES ============
+
+export interface KalshiMarket {
   ticker: string;
+  event_ticker: string;
+  market_type: string;
   title: string;
-  subtitle: string;
-  category: string;
-  status: string;
-  expiration_time: string;
+  subtitle?: string;
+  yes_sub_title?: string;
+  no_sub_title?: string;
+  open_time: string;
   close_time: string;
+  expected_expiration_time: string;
+  expiration_time?: string;
+  status: 'open' | 'closed' | 'settled';
+  response_price_units: string;
+  notional_value: number;
+  tick_size: number;
   yes_bid: number;
   yes_ask: number;
   no_bid: number;
   no_ask: number;
+  last_price: number;
+  previous_yes_bid?: number;
+  previous_yes_ask?: number;
+  previous_price?: number;
   volume: number;
+  volume_24h: number;
+  liquidity: number;
   open_interest: number;
   result?: string;
+  cap_strike?: number;
+  rules_primary?: string;
+  rules_secondary?: string;
+  settlement_timer_seconds?: number;
+  category?: string;
+  tags?: string[];
 }
 
-interface KalshiOrderBook {
+export interface KalshiEvent {
+  event_ticker: string;
+  series_ticker: string;
+  title: string;
+  mutually_exclusive: boolean;
+  category: string;
+  sub_title?: string;
+  strike_date?: string;
+  markets: KalshiMarket[];
+}
+
+export interface KalshiOrderBook {
   ticker: string;
-  yes: {
-    bids: Array<[number, number]>; // [price, contracts]
-    asks: Array<[number, number]>;
-  };
-  no: {
-    bids: Array<[number, number]>;
-    asks: Array<[number, number]>;
-  };
+  yes: KalshiOrderBookSide;
+  no: KalshiOrderBookSide;
 }
 
-export class KalshiAdapter implements VenueAdapter {
-  venue: Venue = 'kalshi';
-  private client: AxiosInstance;
-  private healthStatus: { status: 'healthy' | 'degraded' | 'down'; message?: string } = {
-    status: 'down',
-    message: 'Not initialized',
-  };
+export interface KalshiOrderBookSide {
+  bids: KalshiOrderBookLevel[];
+  asks: KalshiOrderBookLevel[];
+}
 
-  constructor(config: AdapterConfig) {
+export interface KalshiOrderBookLevel {
+  price: number;
+  quantity: number;
+}
+
+export interface KalshiTrade {
+  trade_id: string;
+  ticker: string;
+  side: 'yes' | 'no';
+  yes_price: number;
+  no_price: number;
+  count: number;
+  taker_side: 'yes' | 'no';
+  created_time: string;
+}
+
+export interface KalshiWSMessage {
+  type: string;
+  msg?: any;
+  sid?: number;
+}
+
+export interface KalshiSnapshot {
+  market_ticker: string;
+  yes_bid: number;
+  yes_ask: number;
+  no_bid: number;
+  no_ask: number;
+  last_price: number;
+  volume: number;
+  open_interest: number;
+  timestamp: string;
+}
+
+// ============ KALSHI REST CLIENT ============
+
+export class KalshiRestClient {
+  private client: AxiosInstance;
+  private apiKey?: string;
+
+  constructor(apiKey?: string, demo: boolean = false) {
+    this.apiKey = apiKey;
     this.client = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.timeout || 30000,
+      baseURL: demo ? KALSHI_DEMO_REST_URL : KALSHI_REST_URL,
+      timeout: 30000,
       headers: {
         'Accept': 'application/json',
-      },
+        'Content-Type': 'application/json',
+        ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
+      }
     });
   }
 
-  async initialize(): Promise<void> {
-    try {
-      await this.client.get('/markets', { params: { limit: 1 } });
-      this.healthStatus = { status: 'healthy' };
-    } catch (error) {
-      this.healthStatus = { status: 'degraded', message: 'Using mock data' };
-    }
+  /**
+   * Get all events
+   */
+  async getEvents(params?: {
+    limit?: number;
+    cursor?: string;
+    status?: string;
+    series_ticker?: string;
+    with_nested_markets?: boolean;
+  }): Promise<{ events: KalshiEvent[]; cursor?: string }> {
+    const response = await this.client.get('/events', { params });
+    return response.data;
   }
 
-  async fetchMarkets(): Promise<RawMarket[]> {
-    try {
-      const response = await this.client.get('/markets', {
-        params: { limit: 100, status: 'open' },
+  /**
+   * Get a specific event
+   */
+  async getEvent(eventTicker: string, withNestedMarkets: boolean = true): Promise<KalshiEvent> {
+    const response = await this.client.get(`/events/${eventTicker}`, {
+      params: { with_nested_markets: withNestedMarkets }
+    });
+    return response.data.event;
+  }
+
+  /**
+   * Get all markets
+   */
+  async getMarkets(params?: {
+    limit?: number;
+    cursor?: string;
+    event_ticker?: string;
+    series_ticker?: string;
+    status?: string;
+    tickers?: string;
+    min_close_ts?: number;
+    max_close_ts?: number;
+  }): Promise<{ markets: KalshiMarket[]; cursor?: string }> {
+    const response = await this.client.get('/markets', { params });
+    return response.data;
+  }
+
+  /**
+   * Get a specific market
+   */
+  async getMarket(ticker: string): Promise<KalshiMarket> {
+    const response = await this.client.get(`/markets/${ticker}`);
+    return response.data.market;
+  }
+
+  /**
+   * Get order book for a market
+   */
+  async getOrderBook(ticker: string, depth?: number): Promise<KalshiOrderBook> {
+    const response = await this.client.get(`/markets/${ticker}/orderbook`, {
+      params: { depth }
+    });
+    return response.data.orderbook;
+  }
+
+  /**
+   * Get trades for a market
+   */
+  async getTrades(ticker: string, params?: {
+    limit?: number;
+    cursor?: string;
+    min_ts?: number;
+    max_ts?: number;
+  }): Promise<{ trades: KalshiTrade[]; cursor?: string }> {
+    const response = await this.client.get(`/markets/${ticker}/trades`, { params });
+    return response.data;
+  }
+
+  /**
+   * Get market history (candlesticks)
+   */
+  async getMarketHistory(ticker: string, params?: {
+    start_ts?: number;
+    end_ts?: number;
+    period_interval?: number; // in minutes
+  }): Promise<{ history: any[] }> {
+    const response = await this.client.get(`/markets/${ticker}/history`, { params });
+    return response.data;
+  }
+
+  /**
+   * Get series (categories)
+   */
+  async getSeries(params?: {
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ series: any[]; cursor?: string }> {
+    const response = await this.client.get('/series', { params });
+    return response.data;
+  }
+
+  /**
+   * Search markets
+   */
+  async search(query: string): Promise<{ markets: KalshiMarket[]; events: KalshiEvent[] }> {
+    // Kalshi doesn't have a dedicated search endpoint, so we search in title
+    const { markets } = await this.getMarkets({ limit: 200, status: 'open' });
+    const queryLower = query.toLowerCase();
+    
+    const filteredMarkets = markets.filter(m => 
+      m.title.toLowerCase().includes(queryLower) ||
+      m.ticker.toLowerCase().includes(queryLower)
+    );
+
+    // Group by event
+    const eventTickers = [...new Set(filteredMarkets.map(m => m.event_ticker))];
+    const events: KalshiEvent[] = [];
+    
+    for (const ticker of eventTickers.slice(0, 10)) {
+      try {
+        const event = await this.getEvent(ticker);
+        events.push(event);
+      } catch (e) {
+        // Event not found
+      }
+    }
+
+    return { markets: filteredMarkets, events };
+  }
+}
+
+// ============ KALSHI WEBSOCKET CLIENT ============
+
+export class KalshiWebSocketClient extends EventEmitter {
+  private ws: WebSocket | null = null;
+  private apiKey?: string;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectDelay: number = 1000;
+  private subscriptions: Set<string> = new Set();
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private isConnected: boolean = false;
+  private messageId: number = 1;
+
+  constructor(apiKey?: string) {
+    super();
+    this.apiKey = apiKey;
+  }
+
+  /**
+   * Connect to WebSocket
+   */
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        const url = this.apiKey 
+          ? `${KALSHI_WS_URL}?token=${this.apiKey}`
+          : KALSHI_WS_URL;
+
+        this.ws = new WebSocket(url);
+
+        this.ws.on('open', () => {
+          console.log('Kalshi WebSocket connected');
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          this.startHeartbeat();
+          this.emit('connected');
+          
+          // Resubscribe to previous subscriptions
+          for (const ticker of this.subscriptions) {
+            this.subscribeToMarket(ticker);
+          }
+          
+          resolve();
+        });
+
+        this.ws.on('message', (data: Buffer) => {
+          try {
+            const message = JSON.parse(data.toString());
+            this.handleMessage(message);
+          } catch (e) {
+            console.error('Failed to parse Kalshi message:', e);
+          }
+        });
+
+        this.ws.on('close', (code, reason) => {
+          console.log(`Kalshi WebSocket closed: ${code} - ${reason}`);
+          this.isConnected = false;
+          this.stopHeartbeat();
+          this.emit('disconnected', { code, reason: reason.toString() });
+          this.attemptReconnect();
+        });
+
+        this.ws.on('error', (error) => {
+          console.error('Kalshi WebSocket error:', error);
+          this.emit('error', error);
+          if (!this.isConnected) {
+            reject(error);
+          }
+        });
+
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Disconnect from WebSocket
+   */
+  disconnect(): void {
+    this.subscriptions.clear();
+    this.stopHeartbeat();
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.isConnected = false;
+  }
+
+  /**
+   * Subscribe to market updates
+   */
+  subscribeToMarket(ticker: string): void {
+    this.subscriptions.add(ticker);
+    if (this.isConnected && this.ws) {
+      this.send({
+        id: this.messageId++,
+        cmd: 'subscribe',
+        params: {
+          channels: ['ticker'],
+          market_tickers: [ticker]
+        }
       });
-
-      const markets: KalshiMarket[] = response.data?.markets || [];
-      return markets.flatMap((m) => this.convertToRawMarkets(m));
-    } catch (error) {
-      return this.getMockMarkets();
     }
   }
 
-  async fetchLiquidity(outcomeId: string): Promise<RawLiquidity | null> {
-    const [ticker, outcome] = outcomeId.split('-');
-    
-    try {
-      const response = await this.client.get(`/markets/${ticker}/orderbook`);
-      const book: KalshiOrderBook = response.data?.orderbook;
-      return this.convertToRawLiquidity(book, outcome === 'yes' ? 'yes' : 'no', outcomeId);
-    } catch (error) {
-      return this.getMockLiquidity(outcomeId);
+  /**
+   * Subscribe to orderbook updates
+   */
+  subscribeToOrderbook(ticker: string): void {
+    if (this.isConnected && this.ws) {
+      this.send({
+        id: this.messageId++,
+        cmd: 'subscribe',
+        params: {
+          channels: ['orderbook_delta'],
+          market_tickers: [ticker]
+        }
+      });
     }
   }
 
-  async fetchOrderBook(outcomeId: string): Promise<RawOrderBook | null> {
-    const [ticker, outcome] = outcomeId.split('-');
-    
-    try {
-      const response = await this.client.get(`/markets/${ticker}/orderbook`);
-      const book: KalshiOrderBook = response.data?.orderbook;
-      const side = outcome === 'yes' ? book.yes : book.no;
-
-      return {
-        venue: 'kalshi',
-        outcome_id_native: outcomeId,
-        ts: Date.now(),
-        bids: side.bids.map(([price, size]) => ({ price: price / 100, size })),
-        asks: side.asks.map(([price, size]) => ({ price: price / 100, size })),
-      };
-    } catch (error) {
-      return null;
+  /**
+   * Subscribe to trade updates
+   */
+  subscribeToTrades(ticker: string): void {
+    if (this.isConnected && this.ws) {
+      this.send({
+        id: this.messageId++,
+        cmd: 'subscribe',
+        params: {
+          channels: ['trade'],
+          market_tickers: [ticker]
+        }
+      });
     }
   }
 
-  getHealth() {
-    return this.healthStatus;
+  /**
+   * Unsubscribe from market
+   */
+  unsubscribeFromMarket(ticker: string): void {
+    this.subscriptions.delete(ticker);
+    if (this.isConnected && this.ws) {
+      this.send({
+        id: this.messageId++,
+        cmd: 'unsubscribe',
+        params: {
+          channels: ['ticker', 'orderbook_delta', 'trade'],
+          market_tickers: [ticker]
+        }
+      });
+    }
   }
 
-  async fetchMarketIds(): Promise<string[]> {
-    const markets = await this.fetchMarkets();
-    return markets.map((m) => m.outcome_id_native);
+  /**
+   * Send message to WebSocket
+   */
+  private send(message: any): void {
+    if (this.ws && this.isConnected) {
+      this.ws.send(JSON.stringify(message));
+    }
   }
 
-  private convertToRawMarkets(market: KalshiMarket): RawMarket[] {
-    const baseMarket = {
-      venue: 'kalshi' as Venue,
-      market_id_native: market.ticker,
-      title: market.title,
-      description: market.subtitle,
-      tags: [market.category].filter(Boolean),
-      mechanism: 'CLOB' as const,
-      quote_currency: 'USD' as const,
-      fee_bps: 7, // Kalshi charges ~0.07%
-      tick_size: 0.01,
-      open_ts: Date.now(),
-      close_ts: new Date(market.close_time).getTime(),
-      resolve_ts: new Date(market.expiration_time).getTime(),
-      status: this.mapStatus(market.status),
-      resolution_source: 'Kalshi',
-      truth_spec_text: `${market.title} - ${market.subtitle}`,
-      truth_ambiguity_score: 0.2, // Kalshi markets are well-defined
-    };
-
-    return [
-      {
-        ...baseMarket,
-        outcome_id_native: `${market.ticker}-yes`,
-        outcome_name: 'Yes',
-      },
-      {
-        ...baseMarket,
-        outcome_id_native: `${market.ticker}-no`,
-        outcome_name: 'No',
-      },
-    ];
+  /**
+   * Handle incoming messages
+   */
+  private handleMessage(message: any): void {
+    switch (message.type) {
+      case 'ticker':
+        this.emit('ticker', message.msg);
+        break;
+      case 'orderbook_delta':
+        this.emit('orderbook', message.msg);
+        break;
+      case 'orderbook_snapshot':
+        this.emit('orderbook_snapshot', message.msg);
+        break;
+      case 'trade':
+        this.emit('trade', message.msg);
+        break;
+      case 'subscribed':
+        this.emit('subscribed', message.msg);
+        break;
+      case 'unsubscribed':
+        this.emit('unsubscribed', message.msg);
+        break;
+      case 'error':
+        this.emit('ws_error', message.msg);
+        break;
+      default:
+        this.emit('message', message);
+    }
   }
 
-  private convertToRawLiquidity(
-    book: KalshiOrderBook,
-    side: 'yes' | 'no',
-    outcomeId: string
-  ): RawLiquidity {
-    const sideBook = side === 'yes' ? book.yes : book.no;
-    const bids = sideBook.bids.map(([price, size]) => ({ price: price / 100, size }));
-    const asks = sideBook.asks.map(([price, size]) => ({ price: price / 100, size }));
-
-    const bestBid = bids.length > 0 ? Math.max(...bids.map((b) => b.price)) : null;
-    const bestAsk = asks.length > 0 ? Math.min(...asks.map((a) => a.price)) : null;
-    const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : null;
-
-    return {
-      ts: Date.now(),
-      venue: 'kalshi',
-      outcome_id_native: outcomeId,
-      best_bid: bestBid,
-      best_ask: bestAsk,
-      mid,
-      spread: bestBid && bestAsk ? bestAsk - bestBid : null,
-      depth_usd_1pct: this.calculateDepth(bids, asks, mid, 0.01),
-      depth_usd_5pct: this.calculateDepth(bids, asks, mid, 0.05),
-      amm_price: null,
-      amm_slippage_100: null,
-      amm_slippage_500: null,
-      amm_slippage_1000: null,
-      last_update_ts: Date.now(),
-    };
-  }
-
-  private calculateDepth(
-    bids: Array<{ price: number; size: number }>,
-    asks: Array<{ price: number; size: number }>,
-    mid: number | null,
-    percentFromMid: number
-  ): number {
-    if (!mid) return 0;
-    let depth = 0;
-    for (const bid of bids) {
-      if (bid.price >= mid * (1 - percentFromMid)) {
-        depth += bid.size; // Kalshi uses contracts, not USD
+  /**
+   * Start heartbeat
+   */
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      if (this.isConnected && this.ws) {
+        this.ws.ping();
       }
+    }, 30000);
+  }
+
+  /**
+   * Stop heartbeat
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
-    for (const ask of asks) {
-      if (ask.price <= mid * (1 + percentFromMid)) {
-        depth += ask.size;
-      }
+  }
+
+  /**
+   * Attempt to reconnect
+   */
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log('Max reconnect attempts reached');
+      this.emit('max_reconnect_reached');
+      return;
     }
-    return depth;
+
+    this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    
+    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    
+    setTimeout(() => {
+      this.connect().catch(err => {
+        console.error('Reconnection failed:', err);
+      });
+    }, delay);
   }
 
-  private mapStatus(status: string): 'open' | 'closed' | 'resolved' | 'disputed' | 'paused' {
-    const map: Record<string, any> = {
-      open: 'open',
-      active: 'open',
-      closed: 'closed',
-      settled: 'resolved',
-      finalized: 'resolved',
-    };
-    return map[status.toLowerCase()] || 'open';
-  }
-
-  // Mock data fallbacks
-  private getMockMarkets(): RawMarket[] {
-    return [
-      {
-        venue: 'kalshi',
-        market_id_native: 'KXBTC-25JAN-T100000',
-        outcome_id_native: 'KXBTC-25JAN-T100000-yes',
-        title: 'Will Bitcoin be above $100,000 on January 31, 2025?',
-        description: 'Bitcoin price market',
-        tags: ['crypto'],
-        outcome_name: 'Yes',
-        mechanism: 'CLOB',
-        quote_currency: 'USD',
-        fee_bps: 7,
-        tick_size: 0.01,
-        open_ts: Date.now() - 86400000,
-        close_ts: new Date('2025-01-31').getTime(),
-        resolve_ts: new Date('2025-02-01').getTime(),
-        status: 'open',
-        resolution_source: 'Kalshi',
-        truth_spec_text: 'BTC/USD price at 4:00 PM ET on January 31, 2025',
-        truth_ambiguity_score: 0.1,
-      },
-      {
-        venue: 'kalshi',
-        market_id_native: 'KXBTC-25JAN-T100000',
-        outcome_id_native: 'KXBTC-25JAN-T100000-no',
-        title: 'Will Bitcoin be above $100,000 on January 31, 2025?',
-        description: 'Bitcoin price market',
-        tags: ['crypto'],
-        outcome_name: 'No',
-        mechanism: 'CLOB',
-        quote_currency: 'USD',
-        fee_bps: 7,
-        tick_size: 0.01,
-        open_ts: Date.now() - 86400000,
-        close_ts: new Date('2025-01-31').getTime(),
-        resolve_ts: new Date('2025-02-01').getTime(),
-        status: 'open',
-        resolution_source: 'Kalshi',
-        truth_spec_text: 'BTC/USD price at 4:00 PM ET on January 31, 2025',
-        truth_ambiguity_score: 0.1,
-      },
-    ];
-  }
-
-  private getMockLiquidity(outcomeId: string): RawLiquidity {
+  /**
+   * Get connection status
+   */
+  getStatus(): { connected: boolean; subscriptions: string[] } {
     return {
-      ts: Date.now(),
-      venue: 'kalshi',
-      outcome_id_native: outcomeId,
-      best_bid: 0.61,
-      best_ask: 0.63,
-      mid: 0.62,
-      spread: 0.02,
-      depth_usd_1pct: 5000,
-      depth_usd_5pct: 20000,
-      amm_price: null,
-      amm_slippage_100: null,
-      amm_slippage_500: null,
-      amm_slippage_1000: null,
-      last_update_ts: Date.now(),
+      connected: this.isConnected,
+      subscriptions: Array.from(this.subscriptions)
     };
   }
 }
 
+// ============ MARKET TRANSFORMER ============
+
+/**
+ * Transform Kalshi market to platform-standard format
+ */
+export function transformKalshiMarket(market: KalshiMarket): {
+  market_id_native: string;
+  venue: string;
+  title: string;
+  description: string;
+  category: string;
+  outcomes: string[];
+  prices: number[];
+  volume_24h: number;
+  liquidity: number;
+  open_interest: number;
+  end_date: string;
+  status: string;
+  url: string;
+  ticker: string;
+  event_ticker: string;
+  yes_bid: number;
+  yes_ask: number;
+  no_bid: number;
+  no_ask: number;
+  spread: number;
+  last_price: number;
+} {
+  const yesMid = (market.yes_bid + market.yes_ask) / 2 / 100;
+  const noMid = (market.no_bid + market.no_ask) / 2 / 100;
+  const spread = (market.yes_ask - market.yes_bid) / 100;
+
+  return {
+    market_id_native: market.ticker,
+    venue: 'kalshi',
+    title: market.title,
+    description: market.rules_primary || '',
+    category: market.category || 'Uncategorized',
+    outcomes: ['Yes', 'No'],
+    prices: [yesMid, noMid],
+    volume_24h: market.volume_24h || 0,
+    liquidity: market.liquidity || 0,
+    open_interest: market.open_interest || 0,
+    end_date: market.expected_expiration_time || market.close_time,
+    status: market.status,
+    url: `https://kalshi.com/markets/${market.event_ticker}/${market.ticker}`,
+    ticker: market.ticker,
+    event_ticker: market.event_ticker,
+    yes_bid: market.yes_bid / 100,
+    yes_ask: market.yes_ask / 100,
+    no_bid: market.no_bid / 100,
+    no_ask: market.no_ask / 100,
+    spread,
+    last_price: market.last_price / 100
+  };
+}
+
+/**
+ * Compare Polymarket and Kalshi markets
+ */
+export interface MarketComparison {
+  polymarket?: {
+    id: string;
+    question: string;
+    yesPrice: number;
+    noPrice: number;
+    spread: number;
+    volume: number;
+    liquidity: number;
+    url: string;
+  };
+  kalshi?: {
+    ticker: string;
+    title: string;
+    yesBid: number;
+    yesAsk: number;
+    spread: number;
+    volume: number;
+    liquidity: number;
+    openInterest: number;
+    url: string;
+  };
+  priceDiff?: number;
+  arbOpportunity?: boolean;
+  arbEdge?: number;
+}
+
+// Export singleton instances
+export const kalshiRestClient = new KalshiRestClient();
+export const kalshiWsClient = new KalshiWebSocketClient();

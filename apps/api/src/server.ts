@@ -20,6 +20,8 @@ import { stocksRouter } from './routes/stocks';
 import { eventsRouter } from './routes/events';
 import { topicsRouter } from './routes/topics';
 import polymarketRouter from './routes/polymarket';
+import kalshiRouter from './routes/kalshi';
+import compareRouter from './routes/compare';
 
 // Configuration
 const PORT = process.env.API_PORT || 4000;
@@ -73,6 +75,8 @@ app.use('/api/stocks', stocksRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/topics', topicsRouter);
 app.use('/api/polymarket', polymarketRouter);
+app.use('/api/kalshi', kalshiRouter);
+app.use('/api/compare', compareRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
