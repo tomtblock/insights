@@ -19,6 +19,7 @@ import { healthRouter } from './routes/health';
 import { stocksRouter } from './routes/stocks';
 import { eventsRouter } from './routes/events';
 import { topicsRouter } from './routes/topics';
+import polymarketRouter from './routes/polymarket';
 
 // Configuration
 const PORT = process.env.API_PORT || 4000;
@@ -71,6 +72,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/stocks', stocksRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/topics', topicsRouter);
+app.use('/api/polymarket', polymarketRouter);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

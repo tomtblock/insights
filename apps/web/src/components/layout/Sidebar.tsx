@@ -17,6 +17,7 @@ import {
   Compass,
   Sparkles,
   Globe,
+  CircleDot,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import clsx from 'clsx';
@@ -28,6 +29,7 @@ const navItems = [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/opportunities', label: 'Opportunities', icon: TrendingUp, badge: 'Live', badgeColor: 'emerald' },
       { href: '/markets', label: 'Markets', icon: Target },
+      { href: '/polymarket', label: 'Polymarket', icon: CircleDot, badge: 'API', badgeColor: 'purple' },
     ]
   },
   {
